@@ -423,6 +423,7 @@
     "agentGatewayOptionalHint": "可选：填写网关 host / 端口 / token，复制脚本时会自动带上。",
     "agentGatewaySectionTitle": "Gateway 连接参数（写入脚本）",
     "agentGatewaySectionHint": "下面参数会用于生成运行命令和安装脚本。",
+    "vpsAgentHint": "VPS 模式在服务器本机采集 vnstat、ss 和 Hysteria journal，不需要 Clash / Surge 网关地址。",
     "gatewayToken": "网关令牌",
     "showGatewayToken": "显示网关令牌",
     "hideGatewayToken": "隐藏网关令牌",

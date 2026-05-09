@@ -203,16 +203,20 @@ CONF='$cf'
 : "\${NEKO_BACKEND_ID:?missing NEKO_BACKEND_ID}"
 : "\${NEKO_BACKEND_TOKEN:?missing NEKO_BACKEND_TOKEN}"
 : "\${NEKO_GATEWAY_TYPE:?missing NEKO_GATEWAY_TYPE}"
-: "\${NEKO_GATEWAY_URL:?missing NEKO_GATEWAY_URL}"
 
 set -- "\$AGENT_BIN" \
   --server-url "\$NEKO_SERVER" \
   --backend-id "\$NEKO_BACKEND_ID" \
   --backend-token "\$NEKO_BACKEND_TOKEN" \
-  --gateway-type "\$NEKO_GATEWAY_TYPE" \
-  --gateway-url "\$NEKO_GATEWAY_URL"
+  --gateway-type "\$NEKO_GATEWAY_TYPE"
+
+[ -n "\${NEKO_GATEWAY_URL:-}" ] && set -- "\$@" --gateway-url "\$NEKO_GATEWAY_URL"
 
 [ -n "\${NEKO_GATEWAY_TOKEN:-}" ] && set -- "\$@" --gateway-token "\$NEKO_GATEWAY_TOKEN"
+[ -n "\${NEKO_VPS_INTERFACES:-}" ] && set -- "\$@" --vps-interfaces "\$NEKO_VPS_INTERFACES"
+[ -n "\${NEKO_VPS_TCP_PORTS:-}" ] && set -- "\$@" --vps-tcp-ports "\$NEKO_VPS_TCP_PORTS"
+[ -n "\${NEKO_VPS_HYSTERIA_SERVICE:-}" ] && set -- "\$@" --vps-hysteria-service "\$NEKO_VPS_HYSTERIA_SERVICE"
+[ -n "\${NEKO_VPS_HYSTERIA_PORT:-}" ] && set -- "\$@" --vps-hysteria-port "\$NEKO_VPS_HYSTERIA_PORT"
 [ -n "\${NEKO_AGENT_ID:-}" ] && set -- "\$@" --agent-id "\$NEKO_AGENT_ID"
 [ -n "\${NEKO_REPORT_INTERVAL:-}" ] && set -- "\$@" --report-interval "\$NEKO_REPORT_INTERVAL"
 [ -n "\${NEKO_HEARTBEAT_INTERVAL:-}" ] && set -- "\$@" --heartbeat-interval "\$NEKO_HEARTBEAT_INTERVAL"
@@ -651,9 +655,13 @@ Quick add with flags (auto-starts by default):
     --server-url <url> \
     --backend-id <id> \
     --backend-token <token> \
-    --gateway-type <clash|surge> \
-    --gateway-url <url> \
+    --gateway-type <clash|surge|vps> \
+    [--gateway-url <url>] \
     [--gateway-token <token>] \
+    [--vps-interfaces eth0] \
+    [--vps-tcp-ports 25629,59962] \
+    [--vps-hysteria-service hysteria-server] \
+    [--vps-hysteria-port 3482] \
     [--no-start]        # skip auto-start after add
 
 Upgrade examples:
@@ -666,11 +674,13 @@ Config and runtime paths:
   AGENT_BIN=$AGENT_BIN
 
 Required config keys:
-  NEKO_SERVER, NEKO_BACKEND_ID, NEKO_BACKEND_TOKEN, NEKO_GATEWAY_TYPE, NEKO_GATEWAY_URL
+  NEKO_SERVER, NEKO_BACKEND_ID, NEKO_BACKEND_TOKEN, NEKO_GATEWAY_TYPE
 Optional keys:
-  NEKO_GATEWAY_TOKEN, NEKO_LOG, NEKO_AGENT_ID, NEKO_REPORT_INTERVAL,
+  NEKO_GATEWAY_URL, NEKO_GATEWAY_TOKEN, NEKO_LOG, NEKO_AGENT_ID, NEKO_REPORT_INTERVAL,
   NEKO_HEARTBEAT_INTERVAL, NEKO_GATEWAY_POLL_INTERVAL, NEKO_REQUEST_TIMEOUT,
-  NEKO_REPORT_BATCH_SIZE, NEKO_MAX_PENDING_UPDATES, NEKO_STALE_FLOW_TIMEOUT
+  NEKO_REPORT_BATCH_SIZE, NEKO_MAX_PENDING_UPDATES, NEKO_STALE_FLOW_TIMEOUT,
+  NEKO_VPS_INTERFACES, NEKO_VPS_TCP_PORTS, NEKO_VPS_HYSTERIA_SERVICE,
+  NEKO_VPS_HYSTERIA_PORT
 
 Examples:
   # Add and start a new backend
@@ -721,7 +731,9 @@ load_config() {
   require_config_key "NEKO_BACKEND_ID"
   require_config_key "NEKO_BACKEND_TOKEN"
   require_config_key "NEKO_GATEWAY_TYPE"
-  require_config_key "NEKO_GATEWAY_URL"
+  if [ "$NEKO_GATEWAY_TYPE" != "vps" ]; then
+    require_config_key "NEKO_GATEWAY_URL"
+  fi
 }
 
 build_agent_args() {
@@ -729,11 +741,25 @@ build_agent_args() {
     --server-url "$NEKO_SERVER" \
     --backend-id "$NEKO_BACKEND_ID" \
     --backend-token "$NEKO_BACKEND_TOKEN" \
-    --gateway-type "$NEKO_GATEWAY_TYPE" \
-    --gateway-url "$NEKO_GATEWAY_URL"
+    --gateway-type "$NEKO_GATEWAY_TYPE"
 
+  if [ -n "${NEKO_GATEWAY_URL:-}" ]; then
+    set -- "$@" --gateway-url "$NEKO_GATEWAY_URL"
+  fi
   if [ -n "${NEKO_GATEWAY_TOKEN:-}" ]; then
     set -- "$@" --gateway-token "$NEKO_GATEWAY_TOKEN"
+  fi
+  if [ -n "${NEKO_VPS_INTERFACES:-}" ]; then
+    set -- "$@" --vps-interfaces "$NEKO_VPS_INTERFACES"
+  fi
+  if [ -n "${NEKO_VPS_TCP_PORTS:-}" ]; then
+    set -- "$@" --vps-tcp-ports "$NEKO_VPS_TCP_PORTS"
+  fi
+  if [ -n "${NEKO_VPS_HYSTERIA_SERVICE:-}" ]; then
+    set -- "$@" --vps-hysteria-service "$NEKO_VPS_HYSTERIA_SERVICE"
+  fi
+  if [ -n "${NEKO_VPS_HYSTERIA_PORT:-}" ]; then
+    set -- "$@" --vps-hysteria-port "$NEKO_VPS_HYSTERIA_PORT"
   fi
   if [ -n "${NEKO_AGENT_ID:-}" ]; then
     set -- "$@" --agent-id "$NEKO_AGENT_ID"
@@ -787,10 +813,10 @@ cmd_init() {
 
 # Quick add with flags instead of KEY=VALUE pairs
 cmd_add() {
-  if [ "$#" -lt 6 ]; then
-    err "add requires: <name> --server-url <url> --backend-id <id> --backend-token <token> --gateway-type <type> --gateway-url <url>"
+  if [ "$#" -lt 8 ]; then
+    err "add requires: <name> --server-url <url> --backend-id <id> --backend-token <token> --gateway-type <type>"
     echo ""
-    echo "Usage: $PROG add <name> --server-url <url> --backend-id <id> --backend-token <token> --gateway-type <clash|surge> --gateway-url <url> [--gateway-token <token>] [--auto-start]"
+    echo "Usage: $PROG add <name> --server-url <url> --backend-id <id> --backend-token <token> --gateway-type <clash|surge|vps> [--gateway-url <url>] [--gateway-token <token>] [--auto-start]"
     exit 1
   fi
 
@@ -804,6 +830,10 @@ cmd_add() {
   gateway_type=""
   gateway_url=""
   gateway_token=""
+  vps_interfaces=""
+  vps_tcp_ports=""
+  vps_hysteria_service=""
+  vps_hysteria_port=""
   auto_start="true"   # default: start immediately after add
 
   while [ "$#" -gt 0 ]; do
@@ -832,6 +862,22 @@ cmd_add() {
         gateway_token="$2"
         shift 2
         ;;
+      --vps-interfaces)
+        vps_interfaces="$2"
+        shift 2
+        ;;
+      --vps-tcp-ports)
+        vps_tcp_ports="$2"
+        shift 2
+        ;;
+      --vps-hysteria-service)
+        vps_hysteria_service="$2"
+        shift 2
+        ;;
+      --vps-hysteria-port)
+        vps_hysteria_port="$2"
+        shift 2
+        ;;
       --auto-start)
         auto_start="true"
         shift
@@ -848,9 +894,13 @@ cmd_add() {
   done
 
   # Validate required fields
-  if [ -z "$server_url" ] || [ -z "$backend_id" ] || [ -z "$backend_token" ] || [ -z "$gateway_type" ] || [ -z "$gateway_url" ]; then
+  if [ -z "$server_url" ] || [ -z "$backend_id" ] || [ -z "$backend_token" ] || [ -z "$gateway_type" ]; then
     err "missing required flags"
-    echo "Required: --server-url, --backend-id, --backend-token, --gateway-type, --gateway-url"
+    echo "Required: --server-url, --backend-id, --backend-token, --gateway-type"
+    exit 1
+  fi
+  if [ "$gateway_type" != "vps" ] && [ -z "$gateway_url" ]; then
+    err "--gateway-url is required unless --gateway-type vps"
     exit 1
   fi
 
@@ -860,9 +910,23 @@ cmd_add() {
   config_vars="$config_vars NEKO_BACKEND_ID=$backend_id"
   config_vars="$config_vars NEKO_BACKEND_TOKEN=$backend_token"
   config_vars="$config_vars NEKO_GATEWAY_TYPE=$gateway_type"
-  config_vars="$config_vars NEKO_GATEWAY_URL=$gateway_url"
+  if [ -n "$gateway_url" ]; then
+    config_vars="$config_vars NEKO_GATEWAY_URL=$gateway_url"
+  fi
   if [ -n "$gateway_token" ]; then
     config_vars="$config_vars NEKO_GATEWAY_TOKEN=$gateway_token"
+  fi
+  if [ -n "$vps_interfaces" ]; then
+    config_vars="$config_vars NEKO_VPS_INTERFACES=$vps_interfaces"
+  fi
+  if [ -n "$vps_tcp_ports" ]; then
+    config_vars="$config_vars NEKO_VPS_TCP_PORTS=$vps_tcp_ports"
+  fi
+  if [ -n "$vps_hysteria_service" ]; then
+    config_vars="$config_vars NEKO_VPS_HYSTERIA_SERVICE=$vps_hysteria_service"
+  fi
+  if [ -n "$vps_hysteria_port" ]; then
+    config_vars="$config_vars NEKO_VPS_HYSTERIA_PORT=$vps_hysteria_port"
   fi
 
   # Initialize config

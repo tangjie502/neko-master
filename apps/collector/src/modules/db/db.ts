@@ -40,7 +40,7 @@ export interface BackendConfig {
   name: string;
   url: string;
   token: string;
-  type: 'clash' | 'surge';
+  type: 'clash' | 'surge' | 'vps';
   enabled: boolean;
   is_active: boolean;
   listening: boolean;
@@ -1008,7 +1008,7 @@ export class StatsDatabase {
   getCleanupStats() { return this.repos.config.getCleanupStats(); }
 
   // Backend
-  createBackend(backend: { name: string; url: string; token?: string; type?: 'clash' | 'surge' }) { return this.repos.backend.createBackend(backend); }
+  createBackend(backend: { name: string; url: string; token?: string; type?: 'clash' | 'surge' | 'vps' }) { return this.repos.backend.createBackend(backend); }
   getAllBackends() { return this.repos.backend.getAllBackends(); }
   getBackend(id: number) { return this.repos.backend.getBackend(id); }
   getActiveBackend() { return this.repos.backend.getActiveBackend(); }

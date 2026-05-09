@@ -424,6 +424,7 @@
     "agentGatewayOptionalHint": "Optional: fill gateway host / port / token and copied scripts will include them.",
     "agentGatewaySectionTitle": "Gateway Connection Params (Used in Scripts)",
     "agentGatewaySectionHint": "These values are included when generating run and install scripts.",
+    "vpsAgentHint": "VPS mode collects vnstat, ss, and Hysteria journal locally on the server. No Clash / Surge gateway URL is needed.",
     "gatewayToken": "Gateway Token",
     "showGatewayToken": "Show gateway token",
     "hideGatewayToken": "Hide gateway token",

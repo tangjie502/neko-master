@@ -24,5 +24,6 @@ type FlowSnapshot struct {
 	RulePayload string
 	Upload      int64
 	Download    int64
+	Connections int64
 	TimestampMs int64
 }

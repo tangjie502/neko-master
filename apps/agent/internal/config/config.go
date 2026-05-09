@@ -13,6 +13,7 @@ import (
 // AgentVersion is set at build time via -ldflags "-X ...config.AgentVersion=<tag>"
 // Falls back to "dev" for local/untagged builds.
 var AgentVersion = "dev"
+
 const AgentProtocolVersion = 1
 
 var (
@@ -36,6 +37,10 @@ type Config struct {
 	ReportBatchSize     int
 	MaxPendingUpdates   int
 	StaleFlowTimeout    time.Duration
+	VPSInterfaces       []string
+	VPSTCPPorts         []string
+	VPSHysteriaService  string
+	VPSHysteriaPort     string
 }
 
 func Parse(args []string) (Config, error) {
@@ -46,7 +51,7 @@ func Parse(args []string) (Config, error) {
 	backendID := fs.Int("backend-id", 0, "Backend ID configured in Neko Master")
 	backendToken := fs.String("backend-token", "", "Backend token for agent authentication")
 	agentID := fs.String("agent-id", "", "Agent ID (optional, auto-generated from backend-token if not provided)")
-	gatewayType := fs.String("gateway-type", "clash", "Gateway type: clash or surge")
+	gatewayType := fs.String("gateway-type", "clash", "Gateway type: clash, surge, or vps")
 	gatewayURL := fs.String("gateway-url", "", "Gateway control endpoint URL")
 	gatewayToken := fs.String("gateway-token", "", "Gateway secret token (optional)")
 	logEnabled := fs.Bool("log", true, "Enable runtime logs (set false to disable)")
@@ -58,6 +63,10 @@ func Parse(args []string) (Config, error) {
 	reportBatchSize := fs.Int("report-batch-size", 1000, "Maximum updates per report request")
 	maxPending := fs.Int("max-pending-updates", 50000, "Maximum buffered updates in memory")
 	staleFlowTimeout := fs.Duration("stale-flow-timeout", 5*time.Minute, "Flow state stale timeout")
+	vpsInterfaces := fs.String("vps-interfaces", "eth0", "VPS interfaces to read from vnstat, comma-separated")
+	vpsTCPPorts := fs.String("vps-tcp-ports", "25629,59962", "VPS TCP inbound ports, comma-separated")
+	vpsHysteriaService := fs.String("vps-hysteria-service", "hysteria-server", "systemd unit name for Hysteria journal")
+	vpsHysteriaPort := fs.String("vps-hysteria-port", "3482", "Hysteria UDP port label")
 	showVersion := fs.Bool("version", false, "Print version and exit")
 	help := fs.Bool("help", false, "Show help")
 
@@ -75,13 +84,16 @@ func Parse(args []string) (Config, error) {
 		return Config{}, ErrVersion
 	}
 
-	if strings.TrimSpace(*serverURL) == "" || *backendID <= 0 || strings.TrimSpace(*backendToken) == "" || strings.TrimSpace(*gatewayURL) == "" {
-		return Config{}, errors.New("server-url, backend-id, backend-token, gateway-url are required")
+	if strings.TrimSpace(*serverURL) == "" || *backendID <= 0 || strings.TrimSpace(*backendToken) == "" {
+		return Config{}, errors.New("server-url, backend-id, backend-token are required")
 	}
 
 	gt := strings.ToLower(strings.TrimSpace(*gatewayType))
-	if gt != "clash" && gt != "surge" {
+	if gt != "clash" && gt != "surge" && gt != "vps" {
 		return Config{}, fmt.Errorf("invalid gateway-type: %s", *gatewayType)
+	}
+	if gt != "vps" && strings.TrimSpace(*gatewayURL) == "" {
+		return Config{}, errors.New("gateway-url is required for clash and surge")
 	}
 
 	if *reportInterval <= 0 || *heartbeatInterval <= 0 || *gatewayPollInterval <= 0 || *requestTimeout <= 0 {
@@ -122,25 +134,33 @@ func Parse(args []string) (Config, error) {
 		ReportBatchSize:     *reportBatchSize,
 		MaxPendingUpdates:   *maxPending,
 		StaleFlowTimeout:    *staleFlowTimeout,
+		VPSInterfaces:       splitCSV(*vpsInterfaces),
+		VPSTCPPorts:         splitCSV(*vpsTCPPorts),
+		VPSHysteriaService:  strings.TrimSpace(*vpsHysteriaService),
+		VPSHysteriaPort:     strings.TrimSpace(*vpsHysteriaPort),
 	}, nil
 }
 
 func Usage() string {
 	lines := []string{
 		"Usage:",
-		"  neko-agent --server-url <url> --backend-id <id> --backend-token <token> --gateway-type <clash|surge> --gateway-url <url> [options]",
+		"  neko-agent --server-url <url> --backend-id <id> --backend-token <token> --gateway-type <clash|surge|vps> [options]",
 		"",
 		"Required:",
 		"  --server-url            Neko Master server URL",
 		"  --backend-id            Backend ID in Neko Master",
 		"  --backend-token         Backend token",
-		"  --gateway-url           Gateway API URL",
+		"  --gateway-url           Gateway API URL (required for clash/surge)",
 		"",
 		"Optional:",
 		"  --agent-id              Agent ID (auto-generated from backend-token if not set)",
 		"  --log                   enable runtime logs (default true, set --log=false to disable)",
-		"  --gateway-type          clash|surge (default clash)",
+		"  --gateway-type          clash|surge|vps (default clash)",
 		"  --gateway-token         Gateway secret",
+		"  --vps-interfaces       VPS interfaces for vnstat, comma-separated",
+		"  --vps-tcp-ports        VPS TCP inbound ports, comma-separated",
+		"  --vps-hysteria-service Hysteria systemd service name",
+		"  --vps-hysteria-port    Hysteria UDP port label",
 		"  --report-interval       default 2s",
 		"  --heartbeat-interval    default 30s",
 		"  --gateway-poll-interval default 2s",
@@ -183,6 +203,9 @@ func normalizeServerAPIBase(raw string) string {
 }
 
 func normalizeGatewayEndpoint(gatewayType, raw string) string {
+	if gatewayType == "vps" {
+		return "vps://local"
+	}
 	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
 	if gatewayType == "clash" {
 		trimmed = strings.Replace(trimmed, "ws://", "http://", 1)
@@ -190,4 +213,16 @@ func normalizeGatewayEndpoint(gatewayType, raw string) string {
 		return strings.TrimSuffix(trimmed, "/connections")
 	}
 	return strings.TrimSuffix(trimmed, "/v1/requests/recent")
+}
+
+func splitCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

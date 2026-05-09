@@ -143,11 +143,26 @@ use_local_agent() {
 		--server-url "$NEKO_SERVER" \
 		--backend-id "$NEKO_BACKEND_ID" \
 		--backend-token "$NEKO_BACKEND_TOKEN" \
-		--gateway-type "$NEKO_GATEWAY_TYPE" \
-		--gateway-url "$NEKO_GATEWAY_URL"
+		--gateway-type "$NEKO_GATEWAY_TYPE"
+
+	if [ -n "${NEKO_GATEWAY_URL:-}" ]; then
+		set -- "$@" --gateway-url "$NEKO_GATEWAY_URL"
+	fi
 
 	if [ -n "${NEKO_GATEWAY_TOKEN:-}" ]; then
 		set -- "$@" --gateway-token "$NEKO_GATEWAY_TOKEN"
+	fi
+	if [ -n "${NEKO_VPS_INTERFACES:-}" ]; then
+		set -- "$@" --vps-interfaces "$NEKO_VPS_INTERFACES"
+	fi
+	if [ -n "${NEKO_VPS_TCP_PORTS:-}" ]; then
+		set -- "$@" --vps-tcp-ports "$NEKO_VPS_TCP_PORTS"
+	fi
+	if [ -n "${NEKO_VPS_HYSTERIA_SERVICE:-}" ]; then
+		set -- "$@" --vps-hysteria-service "$NEKO_VPS_HYSTERIA_SERVICE"
+	fi
+	if [ -n "${NEKO_VPS_HYSTERIA_PORT:-}" ]; then
+		set -- "$@" --vps-hysteria-port "$NEKO_VPS_HYSTERIA_PORT"
 	fi
 
 	if [ "${NEKO_AUTO_START:-true}" != "true" ]; then
@@ -180,7 +195,7 @@ show_plan() {
   backend id:        ${NEKO_BACKEND_ID}
   instance:          ${NEKO_INSTANCE_NAME}
   gateway type:      ${NEKO_GATEWAY_TYPE}
-  gateway url:       ${NEKO_GATEWAY_URL}
+  gateway url:       ${NEKO_GATEWAY_URL:-}
   gateway token:     ${token_mode}
   install dir:       ${NEKO_INSTALL_DIR}
   auto start:        ${NEKO_AUTO_START}
@@ -192,12 +207,15 @@ main() {
 	require_env "NEKO_SERVER"
 	require_env "NEKO_BACKEND_ID"
 	require_env "NEKO_BACKEND_TOKEN"
-	require_env "NEKO_GATEWAY_URL"
 
 	show_intro
 
 	# Environment defaults
 	NEKO_GATEWAY_TYPE="${NEKO_GATEWAY_TYPE:-clash}"
+	if [ "$NEKO_GATEWAY_TYPE" != "vps" ]; then
+		require_env "NEKO_GATEWAY_URL"
+	fi
+	NEKO_GATEWAY_URL="${NEKO_GATEWAY_URL:-}"
 	NEKO_GATEWAY_TOKEN="${NEKO_GATEWAY_TOKEN:-}"
 	NEKO_AGENT_REPO="${NEKO_AGENT_REPO:-foru17/neko-master}"
 	NEKO_AGENT_VERSION="${NEKO_AGENT_VERSION:-latest}"
@@ -382,10 +400,24 @@ main() {
 		--server-url "$NEKO_SERVER" \
 		--backend-id "$NEKO_BACKEND_ID" \
 		--backend-token "$NEKO_BACKEND_TOKEN" \
-		--gateway-type "$NEKO_GATEWAY_TYPE" \
-		--gateway-url "$NEKO_GATEWAY_URL"
+		--gateway-type "$NEKO_GATEWAY_TYPE"
+	if [ -n "$NEKO_GATEWAY_URL" ]; then
+		set -- "$@" --gateway-url "$NEKO_GATEWAY_URL"
+	fi
 	if [ -n "$NEKO_GATEWAY_TOKEN" ]; then
 		set -- "$@" --gateway-token "$NEKO_GATEWAY_TOKEN"
+	fi
+	if [ -n "${NEKO_VPS_INTERFACES:-}" ]; then
+		set -- "$@" --vps-interfaces "$NEKO_VPS_INTERFACES"
+	fi
+	if [ -n "${NEKO_VPS_TCP_PORTS:-}" ]; then
+		set -- "$@" --vps-tcp-ports "$NEKO_VPS_TCP_PORTS"
+	fi
+	if [ -n "${NEKO_VPS_HYSTERIA_SERVICE:-}" ]; then
+		set -- "$@" --vps-hysteria-service "$NEKO_VPS_HYSTERIA_SERVICE"
+	fi
+	if [ -n "${NEKO_VPS_HYSTERIA_PORT:-}" ]; then
+		set -- "$@" --vps-hysteria-port "$NEKO_VPS_HYSTERIA_PORT"
 	fi
 	if [ "$NEKO_AUTO_START" != "true" ]; then
 		set -- "$@" --no-start

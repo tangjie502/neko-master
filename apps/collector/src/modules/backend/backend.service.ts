@@ -292,8 +292,12 @@ export class BackendService {
    * Create a new backend
    */
   createBackend(input: CreateBackendInput): CreateBackendResult {
-    const { name, url, token, type = 'clash' } = input;
+    const { name, token, type = 'clash' } = input;
+    const url = type === 'vps' && !isAgentBackendUrl(input.url) ? `agent://${name}` : input.url;
     const isAgentMode = isAgentBackendUrl(url);
+    if (type === 'vps' && !isAgentMode) {
+      throw new Error('VPS backends must use agent mode');
+    }
     const normalizedToken = (token || '').trim();
     const finalToken = isAgentMode
       ? (normalizedToken || generateAgentBackendToken())
@@ -331,6 +335,11 @@ export class BackendService {
     const prevAgentMode = isAgentBackendUrl(existing.url);
     const nextUrl = typeof input.url === 'string' ? input.url : existing.url;
     const nextAgentMode = isAgentBackendUrl(nextUrl);
+    const nextType = input.type ?? existing.type;
+
+    if (nextType === 'vps' && !nextAgentMode) {
+      throw new Error('VPS backends must use agent mode');
+    }
 
     this.db.updateBackend(id, input);
 
@@ -515,6 +524,13 @@ export class BackendService {
    */
   async testConnection(input: TestConnectionInput): Promise<TestConnectionResult> {
     const { url, token, type = 'clash' } = input;
+
+    if (type === 'vps') {
+      if (!isAgentBackendUrl(url)) {
+        return { success: false, message: 'VPS backend must use agent mode' };
+      }
+      return { success: true, message: 'VPS agent mode backend configured (use backend test by id for heartbeat status)' };
+    }
 
     if (isAgentBackendUrl(url)) {
       return { success: true, message: 'Agent mode backend configured (use backend test by id for realtime online status)' };

@@ -314,7 +314,7 @@ export interface SurgeRulesData {
 }
 
 // Backend Type
-export type BackendType = 'clash' | 'surge';
+export type BackendType = 'clash' | 'surge' | 'vps';
 
 // Gateway utilities
 export * from './gateway-utils.js';

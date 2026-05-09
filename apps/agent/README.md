@@ -96,12 +96,40 @@ Quiet mode (no runtime logs):
   --gateway-token <optional-surge-key>
 ```
 
+### VPS
+
+VPS mode runs on the VPS itself and reports local traffic signals to Neko Master.
+
+```bash
+./neko-agent \
+  --server-url https://your-neko.example.com \
+  --backend-id 3 \
+  --backend-token <backend-token> \
+  --gateway-type vps \
+  --vps-interfaces eth0 \
+  --vps-tcp-ports 25629,59962 \
+  --vps-hysteria-service hysteria-server \
+  --vps-hysteria-port 3482
+```
+
+Current VPS data sources:
+
+- `vnstat --json`: interface total traffic delta, used for total/hourly trend.
+- `ss -Hnt state established`: TCP inbound users on configured ports.
+- `journalctl -u hysteria-server`: Hysteria `addr` and `reqAddr` domain events.
+
+Only `vnstat` provides real byte totals in the MVP. `ss` and Hysteria journal events are request/connection signals and use a minimal placeholder byte so they can appear in the existing stats tables.
+
 ## Key flags
 
 - `--agent-id`: custom agent id (default: `hostname-pid`)
 - `--report-interval`: report interval (default `2s`)
 - `--heartbeat-interval`: heartbeat interval (default `30s`)
 - `--gateway-poll-interval`: gateway polling interval (default `2s`)
+- `--vps-interfaces`: VPS interfaces for `vnstat`, comma-separated (default `eth0`)
+- `--vps-tcp-ports`: VPS TCP inbound ports, comma-separated (default `25629,59962`)
+- `--vps-hysteria-service`: Hysteria systemd service name (default `hysteria-server`)
+- `--vps-hysteria-port`: Hysteria UDP port label (default `3482`)
 - `--report-batch-size`: max updates per report (default `1000`)
 - `--max-pending-updates`: local queue cap (default `50000`)
 - `--request-timeout`: HTTP timeout (default `15s`)

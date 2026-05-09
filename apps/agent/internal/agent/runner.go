@@ -98,12 +98,17 @@ func NewRunner(cfg config.Config) *Runner {
 	}
 
 	return &Runner{
-		cfg:           cfg,
-		httpClient:    httpClient,
-		gatewayClient: gateway.NewClient(httpClient, cfg.GatewayType, cfg.GatewayEndpoint, cfg.GatewayToken),
-		hostname:      hostname,
-		queue:         make([]domain.TrafficUpdate, 0, cfg.ReportBatchSize*2),
-		flows:         make(map[string]trackedFlow, 2048),
+		cfg:        cfg,
+		httpClient: httpClient,
+		gatewayClient: gateway.NewClient(httpClient, cfg.GatewayType, cfg.GatewayEndpoint, cfg.GatewayToken, gateway.VPSConfig{
+			Interfaces:      cfg.VPSInterfaces,
+			TCPPorts:        cfg.VPSTCPPorts,
+			HysteriaService: cfg.VPSHysteriaService,
+			HysteriaPort:    cfg.VPSHysteriaPort,
+		}),
+		hostname: hostname,
+		queue:    make([]domain.TrafficUpdate, 0, cfg.ReportBatchSize*2),
+		flows:    make(map[string]trackedFlow, 2048),
 	}
 }
 
@@ -459,9 +464,13 @@ func (r *Runner) ingestSnapshots(snapshots []domain.FlowSnapshot, nowMs int64) {
 			}
 		}
 
-		connections := int64(0)
-		if (deltaUp > 0 || deltaDown > 0) && !counted {
-			connections = 1
+		connections := s.Connections
+		if connections == 0 {
+			if (deltaUp > 0 || deltaDown > 0) && !counted {
+				connections = 1
+				counted = true
+			}
+		} else if !counted {
 			counted = true
 		}
 

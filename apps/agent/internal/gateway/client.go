@@ -25,18 +25,31 @@ type Client struct {
 	gatewayType string
 	endpoint    string
 	token       string
+	vps         *vpsCollector
 }
 
-func NewClient(httpClient *http.Client, gatewayType, endpoint, token string) *Client {
+func NewClient(httpClient *http.Client, gatewayType, endpoint, token string, vpsConfig ...VPSConfig) *Client {
+	var vps *vpsCollector
+	if gatewayType == "vps" {
+		cfg := VPSConfig{}
+		if len(vpsConfig) > 0 {
+			cfg = vpsConfig[0]
+		}
+		vps = NewVPSCollector(cfg)
+	}
 	return &Client{
 		httpClient:  httpClient,
 		gatewayType: gatewayType,
 		endpoint:    endpoint,
 		token:       token,
+		vps:         vps,
 	}
 }
 
 func (c *Client) Collect(ctx context.Context) ([]domain.FlowSnapshot, error) {
+	if c.gatewayType == "vps" {
+		return c.vps.Collect(ctx)
+	}
 	if c.gatewayType == "clash" {
 		return c.collectClash(ctx)
 	}

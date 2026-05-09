@@ -260,7 +260,7 @@ interface Backend {
   mode: BackendMode;
   agentId: string;
   token: string;
-  type?: 'clash' | 'surge';
+  type?: BackendType;
   enabled: boolean;
   is_active: boolean;
   listening: boolean;
@@ -282,7 +282,7 @@ interface AgentBootstrapInfo {
   agentId: string;
   token: string;
   tokenLocked?: boolean;
-  type: 'clash' | 'surge';
+  type: BackendType;
   gatewayHost: string;
   gatewayPort: string;
   gatewaySsl: boolean;
@@ -313,6 +313,7 @@ interface RetentionConfig {
 }
 
 type BackendMode = "direct" | "agent";
+type BackendType = "clash" | "surge" | "vps";
 
 interface ParsedBackendUrl {
   mode: BackendMode;
@@ -329,7 +330,7 @@ interface BackendFormState {
   port: string;
   ssl: boolean;
   token: string;
-  type: 'clash' | 'surge';
+  type: BackendType;
   agentId: string;
   agentGatewayHost: string;
   agentGatewayPort: string;
@@ -348,11 +349,12 @@ interface AgentGatewayConfig {
   gatewayToken: string;
 }
 
-function getDefaultGatewayPort(type: 'clash' | 'surge'): string {
+function getDefaultGatewayPort(type: BackendType): string {
+  if (type === "vps") return "";
   return type === "surge" ? "9091" : "9090";
 }
 
-function getDefaultAgentGatewayConfig(type: 'clash' | 'surge'): AgentGatewayConfig {
+function getDefaultAgentGatewayConfig(type: BackendType): AgentGatewayConfig {
   return {
     gatewayHost: DEFAULT_AGENT_GATEWAY_HOST,
     gatewayPort: getDefaultGatewayPort(type),
@@ -361,7 +363,8 @@ function getDefaultAgentGatewayConfig(type: 'clash' | 'surge'): AgentGatewayConf
   };
 }
 
-function buildGatewayUrl(type: 'clash' | 'surge', host: string, port: string, ssl: boolean): string {
+function buildGatewayUrl(type: BackendType, host: string, port: string, ssl: boolean): string {
+  if (type === "vps") return "vps://local";
   const normalizedHost = host.trim() || DEFAULT_AGENT_GATEWAY_HOST;
   const normalizedPort = port.trim() || getDefaultGatewayPort(type);
   const protocol = ssl ? "https" : "http";
@@ -370,7 +373,7 @@ function buildGatewayUrl(type: 'clash' | 'surge', host: string, port: string, ss
 
 function loadAgentGatewayConfig(
   backendId: number,
-  type: 'clash' | 'surge',
+  type: BackendType,
 ): AgentGatewayConfig {
   const fallback = getDefaultAgentGatewayConfig(type);
   if (typeof window === "undefined") {
@@ -524,6 +527,22 @@ function shellQuote(value: string): string {
 }
 
 function buildAgentRunCommand(info: AgentBootstrapInfo, showToken = true): string {
+  if (info.type === "vps") {
+    const rawToken = info.token.trim() || "<backend-token>";
+    const backendToken = showToken ? rawToken : "***";
+    return [
+      "./neko-agent \\",
+      "  --server-url " + shellQuote(getSuggestedServerUrl()) + " \\",
+      "  --backend-id " + info.backendId + " \\",
+      "  --backend-token " + shellQuote(backendToken) + " \\",
+      "  --gateway-type vps \\",
+      "  --vps-interfaces eth0 \\",
+      "  --vps-tcp-ports 25629,59962 \\",
+      "  --vps-hysteria-service hysteria-server \\",
+      "  --vps-hysteria-port 3482",
+    ].join("\n");
+  }
+
   let generated = "";
   {
     const gatewayUrlWithConfig = buildGatewayUrl(
@@ -567,6 +586,23 @@ function buildAgentRunCommand(info: AgentBootstrapInfo, showToken = true): strin
 }
 
 function buildAgentInstallScriptCommand(info: AgentBootstrapInfo, showToken = true): string {
+  if (info.type === "vps") {
+    const rawToken = info.token.trim() || "<backend-token>";
+    const backendToken = showToken ? rawToken : "***";
+    return [
+      "curl -fsSL " + AGENT_INSTALL_SCRIPT_URL + " \\",
+      "  | env NEKO_SERVER=" + shellQuote(getSuggestedServerUrl()) + " \\",
+      "        NEKO_BACKEND_ID=" + shellQuote(String(info.backendId)) + " \\",
+      "        NEKO_BACKEND_TOKEN=" + shellQuote(backendToken) + " \\",
+      "        NEKO_GATEWAY_TYPE=vps \\",
+      "        NEKO_VPS_INTERFACES=eth0 \\",
+      "        NEKO_VPS_TCP_PORTS=25629,59962 \\",
+      "        NEKO_VPS_HYSTERIA_SERVICE=hysteria-server \\",
+      "        NEKO_VPS_HYSTERIA_PORT=3482 \\",
+      "        sh",
+    ].join("\n");
+  }
+
   let generated = "";
   {
     const gatewayUrlWithConfig = buildGatewayUrl(
@@ -613,6 +649,22 @@ function buildAgentInstallScriptCommand(info: AgentBootstrapInfo, showToken = tr
 }
 
 function buildAgentQuickAddCommand(info: AgentBootstrapInfo, showToken = true): string {
+  if (info.type === "vps") {
+    const rawToken = info.token.trim() || "<backend-token>";
+    const backendToken = showToken ? rawToken : "***";
+    return [
+      "nekoagent add backend-" + info.backendId + " \\",
+      "  --server-url " + shellQuote(getSuggestedServerUrl()) + " \\",
+      "  --backend-id " + info.backendId + " \\",
+      "  --backend-token " + shellQuote(backendToken) + " \\",
+      "  --gateway-type vps \\",
+      "  --vps-interfaces eth0 \\",
+      "  --vps-tcp-ports 25629,59962 \\",
+      "  --vps-hysteria-service hysteria-server \\",
+      "  --vps-hysteria-port 3482",
+    ].join("\n");
+  }
+
   const gatewayUrlWithConfig = buildGatewayUrl(
     info.type,
     info.gatewayHost,
@@ -737,7 +789,7 @@ export function BackendConfigDialog({
     name: string;
     url: string;
     token: string;
-    type: 'clash' | 'surge';
+    type: BackendType;
   } | null>(null);
 
   const [formData, setFormData] = useState<BackendFormState>(
@@ -943,7 +995,7 @@ export function BackendConfigDialog({
 
     const isAgentMode = formData.mode === "agent";
 
-    if (isAgentMode) {
+  if (isAgentMode) {
       const agentId = generateAgentMarker(name);
       setLoading(true);
       try {
@@ -960,8 +1012,8 @@ export function BackendConfigDialog({
 
         toast.success(t("agentBackendCreated", { id: result.id }));
         const agentGatewayConfig: AgentGatewayConfig = {
-          gatewayHost: formData.agentGatewayHost.trim() || DEFAULT_AGENT_GATEWAY_HOST,
-          gatewayPort: formData.agentGatewayPort.trim() || getDefaultGatewayPort(formData.type),
+          gatewayHost: formData.type === "vps" ? "" : formData.agentGatewayHost.trim() || DEFAULT_AGENT_GATEWAY_HOST,
+          gatewayPort: formData.type === "vps" ? "" : formData.agentGatewayPort.trim() || getDefaultGatewayPort(formData.type),
           gatewaySsl: formData.agentGatewaySsl,
           gatewayToken: formData.agentGatewayToken,
         };
@@ -994,6 +1046,11 @@ export function BackendConfigDialog({
       } finally {
         setLoading(false);
       }
+      return;
+    }
+
+    if (formData.type === "vps") {
+      setFormData({ ...formData, mode: "agent" });
       return;
     }
 
@@ -1555,12 +1612,13 @@ export function BackendConfigDialog({
                             <select
                               value={editFormData.type}
                               onChange={(e) =>
-                                setEditFormData({ ...editFormData, type: e.target.value as 'clash' | 'surge' })
+                                setEditFormData({ ...editFormData, type: e.target.value as BackendType })
                               }
                               className="h-9 mt-1 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                             >
                               <option value="clash">Clash / Mihomo</option>
                               <option value="surge">Surge</option>
+                              <option value="vps">VPS</option>
                             </select>
                           </div>
                           {editFormData.mode === "direct" && (
@@ -1912,7 +1970,7 @@ export function BackendConfigDialog({
                           <select
                             value={formData.type}
                             onChange={(e) => {
-                              const nextType = e.target.value as 'clash' | 'surge';
+                              const nextType = e.target.value as BackendType;
                               const currentDefaultPort = getDefaultGatewayPort(formData.type);
                               const nextDefaultPort = getDefaultGatewayPort(nextType);
                               setFormData({
@@ -1928,6 +1986,7 @@ export function BackendConfigDialog({
                           >
                             <option value="clash">Clash / Mihomo</option>
                             <option value="surge">Surge</option>
+                            <option value="vps">VPS</option>
                           </select>
                         </div>
                         {formData.mode === "direct" && (
@@ -2002,60 +2061,68 @@ export function BackendConfigDialog({
                           <p className="text-[11px] text-muted-foreground">
                             {t("agentTokenAutoHint")}
                           </p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {t("agentGatewayOptionalHint")}
-                          </p>
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="text-xs font-medium">
-                                {t("host")}
-                              </label>
-                              <Input
-                                value={formData.agentGatewayHost}
-                                onChange={(e) =>
-                                  setFormData({
-                                    ...formData,
-                                    agentGatewayHost: e.target.value,
-                                  })
-                                }
-                                placeholder={DEFAULT_AGENT_GATEWAY_HOST}
-                                className="h-9 mt-1"
-                              />
-                            </div>
-                            <div>
-                              <label className="text-xs font-medium">
-                                {t("port")}
-                              </label>
-                              <Input
-                                value={formData.agentGatewayPort}
-                                onChange={(e) =>
-                                  setFormData({
-                                    ...formData,
-                                    agentGatewayPort: e.target.value,
-                                  })
-                                }
-                                placeholder={getDefaultGatewayPort(formData.type)}
-                                className="h-9 mt-1"
-                              />
-                            </div>
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium">
-                              {t("gatewayToken")}
-                            </label>
-                            <Input
-                              type="password"
-                              value={formData.agentGatewayToken}
-                              onChange={(e) =>
-                                setFormData({
-                                  ...formData,
-                                  agentGatewayToken: e.target.value,
-                                })
-                              }
-                              placeholder={t("agentGatewayTokenPlaceholder")}
-                              className="h-9 mt-1"
-                            />
-                          </div>
+                          {formData.type === "vps" ? (
+                            <p className="text-[11px] text-muted-foreground">
+                              {t("vpsAgentHint")}
+                            </p>
+                          ) : (
+                            <>
+                              <p className="text-[11px] text-muted-foreground">
+                                {t("agentGatewayOptionalHint")}
+                              </p>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-xs font-medium">
+                                    {t("host")}
+                                  </label>
+                                  <Input
+                                    value={formData.agentGatewayHost}
+                                    onChange={(e) =>
+                                      setFormData({
+                                        ...formData,
+                                        agentGatewayHost: e.target.value,
+                                      })
+                                    }
+                                    placeholder={DEFAULT_AGENT_GATEWAY_HOST}
+                                    className="h-9 mt-1"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-xs font-medium">
+                                    {t("port")}
+                                  </label>
+                                  <Input
+                                    value={formData.agentGatewayPort}
+                                    onChange={(e) =>
+                                      setFormData({
+                                        ...formData,
+                                        agentGatewayPort: e.target.value,
+                                      })
+                                    }
+                                    placeholder={getDefaultGatewayPort(formData.type)}
+                                    className="h-9 mt-1"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="text-xs font-medium">
+                                  {t("gatewayToken")}
+                                </label>
+                                <Input
+                                  type="password"
+                                  value={formData.agentGatewayToken}
+                                  onChange={(e) =>
+                                    setFormData({
+                                      ...formData,
+                                      agentGatewayToken: e.target.value,
+                                    })
+                                  }
+                                  placeholder={t("agentGatewayTokenPlaceholder")}
+                                  className="h-9 mt-1"
+                                />
+                              </div>
+                            </>
+                          )}
                         </div>
                       )}
                       <div className="flex gap-2">
@@ -2544,12 +2611,13 @@ export function BackendConfigDialog({
                 <select
                   value={editFormData.type}
                   onChange={(e) =>
-                    setEditFormData({ ...editFormData, type: e.target.value as 'clash' | 'surge' })
+                    setEditFormData({ ...editFormData, type: e.target.value as BackendType })
                   }
                   disabled
                   className="h-9 mt-1 w-full rounded-md border border-input bg-muted px-3 py-1 text-sm text-muted-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed">
                   <option value="clash">Clash / Mihomo</option>
                   <option value="surge">Surge</option>
+                  <option value="vps">VPS</option>
                 </select>
               </div>
               {editFormData.mode === "direct" && (
@@ -2684,7 +2752,7 @@ export function BackendConfigDialog({
                 <select
                   value={formData.type}
                   onChange={(e) => {
-                    const nextType = e.target.value as 'clash' | 'surge';
+                    const nextType = e.target.value as BackendType;
                     const currentDefaultPort = getDefaultGatewayPort(formData.type);
                     const nextDefaultPort = getDefaultGatewayPort(nextType);
                     setFormData({
@@ -2699,6 +2767,7 @@ export function BackendConfigDialog({
                   className="h-9 mt-1 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
                   <option value="clash">Clash / Mihomo</option>
                   <option value="surge">Surge</option>
+                  <option value="vps">VPS</option>
                 </select>
               </div>
               {formData.mode === "direct" && (
@@ -3170,7 +3239,9 @@ export function BackendConfigDialog({
               <div className="space-y-3 rounded-md border border-dashed p-3">
                 <div className="space-y-0.5">
                   <p className="text-sm font-medium">{t("agentGatewaySectionTitle")}</p>
-                  <p className="text-[11px] text-muted-foreground">{t("agentGatewaySectionHint")}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {agentBootstrapInfo.type === "vps" ? t("vpsAgentHint") : t("agentGatewaySectionHint")}
+                  </p>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -3181,50 +3252,55 @@ export function BackendConfigDialog({
                       className="h-9 mt-1 w-full rounded-md border border-input bg-muted px-3 py-1 text-sm text-muted-foreground shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed">
                       <option value="clash">Clash / Mihomo</option>
                       <option value="surge">Surge</option>
+                      <option value="vps">VPS</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="text-sm font-medium">{t("host")}</label>
-                    <Input
-                      value={agentBootstrapInfo.gatewayHost}
-                      onChange={(e) =>
-                        setAgentBootstrapInfo({
-                          ...agentBootstrapInfo,
-                          gatewayHost: e.target.value,
-                        })
-                      }
-                      placeholder={DEFAULT_AGENT_GATEWAY_HOST}
-                      className="h-9 mt-1"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium">{t("port")}</label>
-                    <Input
-                      value={agentBootstrapInfo.gatewayPort}
-                      onChange={(e) =>
-                        setAgentBootstrapInfo({
-                          ...agentBootstrapInfo,
-                          gatewayPort: e.target.value,
-                        })
-                      }
-                      placeholder={getDefaultGatewayPort(agentBootstrapInfo.type)}
-                      className="h-9 mt-1"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 sm:pt-7">
-                    <Switch
-                      checked={agentBootstrapInfo.gatewaySsl}
-                      onCheckedChange={(checked) =>
-                        setAgentBootstrapInfo({
-                          ...agentBootstrapInfo,
-                          gatewaySsl: checked,
-                        })
-                      }
-                    />
-                    <label className="text-sm font-medium">{t("useSsl")}</label>
-                  </div>
+                  {agentBootstrapInfo.type !== "vps" && (
+                    <>
+                      <div>
+                        <label className="text-sm font-medium">{t("host")}</label>
+                        <Input
+                          value={agentBootstrapInfo.gatewayHost}
+                          onChange={(e) =>
+                            setAgentBootstrapInfo({
+                              ...agentBootstrapInfo,
+                              gatewayHost: e.target.value,
+                            })
+                          }
+                          placeholder={DEFAULT_AGENT_GATEWAY_HOST}
+                          className="h-9 mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">{t("port")}</label>
+                        <Input
+                          value={agentBootstrapInfo.gatewayPort}
+                          onChange={(e) =>
+                            setAgentBootstrapInfo({
+                              ...agentBootstrapInfo,
+                              gatewayPort: e.target.value,
+                            })
+                          }
+                          placeholder={getDefaultGatewayPort(agentBootstrapInfo.type)}
+                          className="h-9 mt-1"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 sm:pt-7">
+                        <Switch
+                          checked={agentBootstrapInfo.gatewaySsl}
+                          onCheckedChange={(checked) =>
+                            setAgentBootstrapInfo({
+                              ...agentBootstrapInfo,
+                              gatewaySsl: checked,
+                            })
+                          }
+                        />
+                        <label className="text-sm font-medium">{t("useSsl")}</label>
+                      </div>
+                    </>
+                  )}
                 </div>
-                <div>
+                {agentBootstrapInfo.type !== "vps" && <div>
                   <label className="text-sm font-medium">{t("gatewayToken")}</label>
                   <Input
                     type="text"
@@ -3238,7 +3314,7 @@ export function BackendConfigDialog({
                     placeholder={t("agentGatewayTokenPlaceholder")}
                     className="h-9 mt-1 font-mono"
                   />
-                </div>
+                </div>}
               </div>
 
               {/* Script Tabs */}
